@@ -3,24 +3,25 @@ import { useToastStore } from '../stores/toast.js';
 import { DEFAULT_SETTINGS } from '../constants/default-settings.js';
 import { fetchSettings, saveSettings, resetSettings } from '../lib/api.js';
 import { useBackupLogic } from './useBackupLogic.js';
-import { t } from '../i18n/index.js';
+import { t, setLocale } from '../i18n/index.js';
+import { confirmAction } from './useConfirm.js';
 
 function normalizeExternalApiConfig(value) {
     const defaults = DEFAULT_SETTINGS.externalApi;
     const externalApi = value && typeof value === 'object' ? value : {};
     const tokens = Array.isArray(externalApi.tokens)
         ? externalApi.tokens
-            .map((item, index) => ({
-                name: String(item?.name || `token-${index + 1}`).trim() || `token-${index + 1}`,
-                token: String(item?.token || '').trim()
-            }))
-            .filter((item) => item.token || item.name)
+              .map((item, index) => ({
+                  name: String(item?.name || `token-${index + 1}`).trim() || `token-${index + 1}`,
+                  token: String(item?.token || '').trim(),
+              }))
+              .filter((item) => item.token || item.name)
         : [];
 
     return {
         ...defaults,
         ...externalApi,
-        tokens: tokens.length > 0 ? tokens : defaults.tokens.map((item) => ({ ...item }))
+        tokens: tokens.length > 0 ? tokens : defaults.tokens.map((item) => ({ ...item })),
     };
 }
 
@@ -50,13 +51,19 @@ export function useSettingsLogic() {
     const disguiseConfig = ref({
         enabled: false,
         pageType: 'default',
-        redirectUrl: ''
+        redirectUrl: '',
     });
-
 
     // ========== 计算属性 ==========
     const hasWhitespace = computed(() => {
-        const fieldsCheck = ['FileName', 'mytoken', 'profileToken', 'transformConfig', 'BotToken', 'ChatID'];
+        const fieldsCheck = [
+            'FileName',
+            'mytoken',
+            'profileToken',
+            'transformConfig',
+            'BotToken',
+            'ChatID',
+        ];
         for (const key of fieldsCheck) {
             if (settings.value[key] && /\s/.test(settings.value[key])) return true;
         }
@@ -82,12 +89,17 @@ export function useSettingsLogic() {
                     disguiseConfig.value = {
                         enabled: settings.value.disguise.enabled ?? false,
                         pageType: settings.value.disguise.pageType ?? 'default',
-                        redirectUrl: settings.value.disguise.redirectUrl ?? ''
+                        redirectUrl: settings.value.disguise.redirectUrl ?? '',
                     };
                 }
 
                 if (!settings.value.storageType) {
                     settings.value.storageType = 'kv';
+                }
+
+                // 应用默认显示语言设置
+                if (settings.value.defaultLocale) {
+                    setLocale(settings.value.defaultLocale);
                 }
             } else {
                 showToast(t('settings.loadFailedWithMessage', { message: result.error }), 'error');
@@ -122,10 +134,11 @@ export function useSettingsLogic() {
             const settingsToSave = {
                 ...settings.value,
                 externalApi: normalizeExternalApiConfig(settings.value.externalApi),
-                disguise: disguiseConfig.value
+                disguise: disguiseConfig.value,
             };
 
-            settingsToSave.ruleLevel = settingsToSave.ruleLevel || settingsToSave.clashRuleLevel || 'std';
+            settingsToSave.ruleLevel =
+                settingsToSave.ruleLevel || settingsToSave.clashRuleLevel || 'std';
 
             delete settingsToSave.prefixConfig;
             delete settingsToSave.prependSubName;
@@ -161,11 +174,19 @@ export function useSettingsLogic() {
      * 处理恢复出厂设置
      */
     const handleReset = async () => {
-        if (!confirm(t('settings.resetConfirm'))) {
+        const firstConfirmed = await confirmAction({
+            message: t('settings.resetConfirm'),
+            variant: 'danger',
+        });
+        if (!firstConfirmed) {
             return;
         }
-        
-        if (!confirm(t('settings.resetConfirmAgain'))) {
+
+        const secondConfirmed = await confirmAction({
+            message: t('settings.resetConfirmAgain'),
+            variant: 'danger',
+        });
+        if (!secondConfirmed) {
             return;
         }
 
